@@ -106,6 +106,12 @@ bool mgos_ethernet_init(void) {
       LOG(LL_ERROR, ("Invalid eth.clk_mode %d", mgos_sys_config_get_eth_clk_mode()));
       return false;
   }
+  mac_config.sw_reset_timeout_ms = 1000;
+  mac_config.rx_task_stack_size  = 2048;
+  mac_config.rx_task_prio        = 15;
+  mac_config.flags               = 0;
+  mac_config.interface           = EMAC_DATA_INTERFACE_RMII;
+
   esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
 
   /* Create PHY */
@@ -115,6 +121,9 @@ bool mgos_ethernet_init(void) {
   if (mgos_sys_config_get_eth_phy_pwr_gpio() != -1) {
     phy_config.reset_gpio_num = mgos_sys_config_get_eth_phy_pwr_gpio();
   }
+  phy_config.reset_timeout_ms    = 100;
+  phy_config.autonego_timeout_ms = 4000;
+
   esp_eth_phy_t *phy = PHY_CREATE_FUNC(&phy_config);
 
   esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
