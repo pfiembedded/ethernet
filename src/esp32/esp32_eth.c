@@ -81,7 +81,14 @@ bool mgos_ethernet_init(void) {
     goto out;
   }
 
+  esp_err_t ret = esp_netif_init();
+  if (ret != ESP_OK) {
+    LOG(LL_ERROR, ("Ethernet %s failed: %d", "netif init", ret));
+    return false;
+  }
+
   /* Create MAC */
+  esp_eth_mac_t *mac = NULL;
   eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
   mac_config.smi_mdc_gpio_num = mgos_sys_config_get_eth_mdc_gpio();
   mac_config.smi_mdio_gpio_num = mgos_sys_config_get_eth_mdio_gpio();
@@ -112,9 +119,14 @@ bool mgos_ethernet_init(void) {
   mac_config.flags               = 0;
   mac_config.interface           = EMAC_DATA_INTERFACE_RMII;
 
-  esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
+  mac = esp_eth_mac_new_esp32(&mac_config);
+  if (mac == NULL) {
+    LOG(LL_ERROR, ("esp_eth_mac_new_esp32 failed"));
+    return false;
+  }
 
   /* Create PHY */
+  esp_eth_phy_t *phy = NULL;
   eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
   const char *phy_model = PHY_MODEL;
   phy_config.phy_addr = mgos_sys_config_get_eth_phy_addr();
@@ -124,12 +136,15 @@ bool mgos_ethernet_init(void) {
   phy_config.reset_timeout_ms    = 100;
   phy_config.autonego_timeout_ms = 4000;
 
-  esp_eth_phy_t *phy = PHY_CREATE_FUNC(&phy_config);
+  phy = PHY_CREATE_FUNC(&phy_config);
+  if (phy == NULL) {
+    LOG(LL_ERROR, ("esp_eth_phy_new failed"));
+    return false;
+  }
 
   esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
-
   esp_eth_handle_t eth_handle = NULL;
-  esp_err_t ret = esp_eth_driver_install(&eth_config, &eth_handle);
+  ret = esp_eth_driver_install(&eth_config, &eth_handle);
   if (ret != ESP_OK) {
     LOG(LL_ERROR, ("Ethernet %s failed: %d", "driver init", ret));
     return false;
