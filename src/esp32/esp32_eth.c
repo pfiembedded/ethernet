@@ -84,6 +84,8 @@ bool mgos_ethernet_init(void) {
     LOG(LL_ERROR, ("Ethernet %s failed: %d", "netif init", ret));
     return false;
   }
+  esp_netif_config_t eth_if_cfg = ESP_NETIF_DEFAULT_ETH();
+  esp_netif_t *eth_if = esp_netif_new(&eth_if_cfg);
 
   /* Create MAC */
   esp_eth_mac_t *mac = NULL;
@@ -148,9 +150,6 @@ bool mgos_ethernet_init(void) {
     return false;
   }
 
-  esp_netif_config_t eth_if_cfg = ESP_NETIF_DEFAULT_ETH();
-  esp_netif_t *eth_if = esp_netif_new(&eth_if_cfg);
-
   ret = esp_netif_attach(eth_if, esp_eth_new_netif_glue(eth_handle));
   if (ret != ESP_OK) {
     LOG(LL_ERROR, ("Ethernet %s failed: %d", "if attach", ret));
@@ -175,6 +174,8 @@ bool mgos_ethernet_init(void) {
 
   struct sockaddr_in ip = {0}, netmask = {0}, gw = {0};
 
+  bool is_dhcp = true;
+
   if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw)) {
 
     esp_netif_ip_info_t static_ip = {
@@ -183,13 +184,9 @@ bool mgos_ethernet_init(void) {
         .gw.addr = gw.sin_addr.s_addr,
     };
 
-    bool is_dhcp =
+    is_dhcp =
         (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
 
-    LOG(LL_INFO,
-        ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
-         mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
-         phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
     if (!is_dhcp) {
       char ips[16], nms[16], gws[16];
       ip4addr_ntoa_r((ip4_addr_t *) &static_ip.ip, ips, sizeof(ips));
@@ -203,6 +200,11 @@ bool mgos_ethernet_init(void) {
       }
     }
   }
+
+  LOG(LL_INFO,
+      ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
+       mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
+       phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
 
   ret = esp_eth_start(eth_handle);
   if (ret != ESP_OK) {
