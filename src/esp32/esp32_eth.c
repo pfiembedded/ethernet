@@ -52,25 +52,66 @@
 #error Unknown/unspecified PHY model
 #endif
 
-static void esp32_eth_event_handler(void *ctx UNUSED_ARG, esp_event_base_t ev_base,
-                                    int32_t ev_id, void *ev_data UNUSED_ARG) {
-  if (ev_base == ETH_EVENT) {
-    switch (ev_id) {
-      case ETHERNET_EVENT_CONNECTED: {
-        mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0,
-                              MGOS_NET_EV_CONNECTED);
-        break;
-      }
-      case ETHERNET_EVENT_DISCONNECTED: {
-        mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0,
-                              MGOS_NET_EV_DISCONNECTED);
-        break;
-      }
-    }
-  } else {
-    mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0,
-                          MGOS_NET_EV_IP_ACQUIRED);
+static void esp32_eth_event_handler(void *ctx, esp_event_base_t ev_base,
+                                    int32_t ev_id, void *ev_data) {
+  // if (ev_base == ETH_EVENT) {
+  //   switch (ev_id) {
+  //     case ETHERNET_EVENT_CONNECTED: {
+  //       mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0,
+  //                             MGOS_NET_EV_CONNECTED);
+  //       break;
+  //     }
+  //     case ETHERNET_EVENT_DISCONNECTED: {
+  //       mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0,
+  //                             MGOS_NET_EV_DISCONNECTED);
+  //       break;
+  //     }
+  //   }
+  // } else {
+  //   mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0,
+  //                         MGOS_NET_EV_IP_ACQUIRED);
+  // }
+  uint8_t mac_addr[6] = {0};
+  bool fc = true;
+  /* we can get the ethernet driver handle from event data */
+  esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)ev_data;
+
+  switch (ev_id) {
+  case ETHERNET_EVENT_CONNECTED:
+    esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+    LOG(LL_INFO, ("Ethernet Link Up"));
+    LOG(LL_INFO, ("Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
+             mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3],
+             mac_addr[4], mac_addr[5]));
+    //esp_eth_ioctl(eth_handle, ETH_CMD_S_FLOW_CTRL, &fc);
+    break;
+  case ETHERNET_EVENT_DISCONNECTED:
+    LOG(LL_INFO, ("Ethernet Link Down"));
+    break;
+  case ETHERNET_EVENT_START:
+    LOG(LL_INFO, ("Ethernet Started"));
+    break;
+  case ETHERNET_EVENT_STOP:
+    LOG(LL_INFO, ("Ethernet Stopped"));
+    break;
+  default:
+      break;
   }
+}
+
+static void esp32_ip_event_handler(void *arg, esp_event_base_t event_base,
+                                   int32_t event_id, void *event_data)
+{
+  LOG(LL_INFO, ("EID: %d", event_id));
+  ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
+  const esp_netif_ip_info_t *ip_info = &event->ip_info;
+
+  LOG(LL_INFO, ("Ethernet Got IP Address"));
+  LOG(LL_INFO, ("~~~~~~~~~~~"));
+  LOG(LL_INFO, ("ETHIP:" IPSTR, IP2STR(&ip_info->ip)));
+  LOG(LL_INFO, ("ETHMASK:" IPSTR, IP2STR(&ip_info->netmask)));
+  LOG(LL_INFO, ("ETHGW:" IPSTR, IP2STR(&ip_info->gw)));
+  LOG(LL_INFO, ("~~~~~~~~~~~"));
 }
 
 bool mgos_ethernet_init(void) {
@@ -164,11 +205,6 @@ bool mgos_ethernet_init(void) {
     return false;
   }
 
-  esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID,
-                             esp32_eth_event_handler, eth_if);
-  esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP,
-                             esp32_eth_event_handler, eth_if);
-
   uint8_t mac_addr[6];
   mac->get_addr(mac, mac_addr);
 
@@ -205,6 +241,26 @@ bool mgos_ethernet_init(void) {
       ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
        mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
        phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
+
+  ret = esp_event_handler_register(
+    ETH_EVENT, ESP_EVENT_ANY_ID,
+    &esp32_eth_event_handler,
+    NULL
+  );
+  if (ret != ESP_OK) {
+    LOG(LL_ERROR, ("Ethernet %s failed: %d", "eth ev handler", ret));
+    return false;
+  }
+
+  ret = esp_event_handler_register(
+    IP_EVENT, ESP_EVENT_ANY_ID,
+    &esp32_ip_event_handler,
+    NULL
+  );
+  if (ret != ESP_OK) {
+    LOG(LL_ERROR, ("Ethernet %s failed: %d", "eth ip handler", ret));
+    return false;
+  }
 
   ret = esp_eth_start(eth_handle);
   if (ret != ESP_OK) {
