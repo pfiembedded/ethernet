@@ -128,9 +128,21 @@ bool mgos_ethernet_init(void) {
   esp_netif_config_t eth_if_cfg = ESP_NETIF_DEFAULT_ETH();
   esp_netif_t *eth_if = esp_netif_new(&eth_if_cfg);
 
-  /* Create MAC */
+  // INIT MAC & PHY
   esp_eth_mac_t *mac = NULL;
   eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+  eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+
+  // CONFIG PHY
+  const char *phy_model = PHY_MODEL;
+  phy_config.phy_addr = mgos_sys_config_get_eth_phy_addr();
+  if (mgos_sys_config_get_eth_phy_pwr_gpio() != -1) {
+    phy_config.reset_gpio_num = mgos_sys_config_get_eth_phy_pwr_gpio();
+  }
+  phy_config.reset_timeout_ms    = 100;
+  phy_config.autonego_timeout_ms = 4000;
+
+  // CONFIG MAC
   mac_config.smi_mdc_gpio_num = mgos_sys_config_get_eth_mdc_gpio();
   mac_config.smi_mdio_gpio_num = mgos_sys_config_get_eth_mdio_gpio();
   switch (mgos_sys_config_get_eth_clk_mode()) {
@@ -160,29 +172,22 @@ bool mgos_ethernet_init(void) {
   mac_config.flags               = 0;
   mac_config.interface           = EMAC_DATA_INTERFACE_RMII;
 
+  // INIT MAC
   mac = esp_eth_mac_new_esp32(&mac_config);
   if (mac == NULL) {
     LOG(LL_ERROR, ("esp_eth_mac_new_esp32 failed"));
     return false;
   }
 
-  /* Create PHY */
+  // INIT PHY
   esp_eth_phy_t *phy = NULL;
-  eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
-  const char *phy_model = PHY_MODEL;
-  phy_config.phy_addr = mgos_sys_config_get_eth_phy_addr();
-  if (mgos_sys_config_get_eth_phy_pwr_gpio() != -1) {
-    phy_config.reset_gpio_num = mgos_sys_config_get_eth_phy_pwr_gpio();
-  }
-  phy_config.reset_timeout_ms    = 100;
-  phy_config.autonego_timeout_ms = 4000;
-
   phy = PHY_CREATE_FUNC(&phy_config);
   if (phy == NULL) {
     LOG(LL_ERROR, ("esp_eth_phy_new failed"));
     return false;
   }
 
+  // INSTALL DRIVER
   esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
   esp_eth_handle_t eth_handle = NULL;
   ret = esp_eth_driver_install(&eth_config, &eth_handle);
@@ -191,19 +196,20 @@ bool mgos_ethernet_init(void) {
     return false;
   }
 
+  // ATTACH DRIVER TO NET IF
   ret = esp_netif_attach(eth_if, esp_eth_new_netif_glue(eth_handle));
   if (ret != ESP_OK) {
     LOG(LL_ERROR, ("Ethernet %s failed: %d", "if attach", ret));
     return false;
   }
 
-  if (mgos_sys_config_get_eth_dhcp_hostname() != NULL &&
-      esp_netif_set_hostname(esp_netif_get_handle_from_ifkey("ETH_DEF"),
-                             mgos_sys_config_get_eth_dhcp_hostname()) !=
-          ESP_OK) {
-    LOG(LL_ERROR, ("ETH: Failed to set host name"));
-    return false;
-  }
+  // if (mgos_sys_config_get_eth_dhcp_hostname() != NULL &&
+  //     esp_netif_set_hostname(esp_netif_get_handle_from_ifkey("ETH_DEF"),
+  //                            mgos_sys_config_get_eth_dhcp_hostname()) !=
+  //         ESP_OK) {
+  //   LOG(LL_ERROR, ("ETH: Failed to set host name"));
+  //   return false;
+  // }
 
   uint8_t mac_addr[6];
   mac->get_addr(mac, mac_addr);
@@ -212,36 +218,37 @@ bool mgos_ethernet_init(void) {
 
   bool is_dhcp = true;
 
-  if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw)) {
-
-    esp_netif_ip_info_t static_ip = {
-        .ip.addr = ip.sin_addr.s_addr,
-        .netmask.addr = netmask.sin_addr.s_addr,
-        .gw.addr = gw.sin_addr.s_addr,
-    };
-
-    is_dhcp =
-        (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
-
-    if (!is_dhcp) {
-      char ips[16], nms[16], gws[16];
-      ip4addr_ntoa_r((ip4_addr_t *) &static_ip.ip, ips, sizeof(ips));
-      ip4addr_ntoa_r((ip4_addr_t *) &static_ip.netmask, nms, sizeof(nms));
-      ip4addr_ntoa_r((ip4_addr_t *) &static_ip.gw, gws, sizeof(gws));
-      LOG(LL_INFO, ("ETH: IP %s/%s, GW %s", ips, nms, gws));
-      esp_netif_dhcpc_stop(eth_if);
-      if ((ret = esp_netif_set_ip_info(eth_if, &static_ip)) != ESP_OK) {
-        LOG(LL_ERROR, ("ETH: Failed to set ip info: %d", ret));
-        return false;
-      }
-    }
-  }
+  // if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw)) {
+  //
+  //   esp_netif_ip_info_t static_ip = {
+  //       .ip.addr = ip.sin_addr.s_addr,
+  //       .netmask.addr = netmask.sin_addr.s_addr,
+  //       .gw.addr = gw.sin_addr.s_addr,
+  //   };
+  //
+  //   is_dhcp =
+  //       (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
+  //
+  //   if (!is_dhcp) {
+  //     char ips[16], nms[16], gws[16];
+  //     ip4addr_ntoa_r((ip4_addr_t *) &static_ip.ip, ips, sizeof(ips));
+  //     ip4addr_ntoa_r((ip4_addr_t *) &static_ip.netmask, nms, sizeof(nms));
+  //     ip4addr_ntoa_r((ip4_addr_t *) &static_ip.gw, gws, sizeof(gws));
+  //     LOG(LL_INFO, ("ETH: IP %s/%s, GW %s", ips, nms, gws));
+  //     esp_netif_dhcpc_stop(eth_if);
+  //     if ((ret = esp_netif_set_ip_info(eth_if, &static_ip)) != ESP_OK) {
+  //       LOG(LL_ERROR, ("ETH: Failed to set ip info: %d", ret));
+  //       return false;
+  //     }
+  //   }
+  // }
 
   LOG(LL_INFO,
       ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
        mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
        phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
 
+  // REGISTER HANDLERS
   ret = esp_event_handler_register(
     ETH_EVENT, ESP_EVENT_ANY_ID,
     &esp32_eth_event_handler,
@@ -261,6 +268,8 @@ bool mgos_ethernet_init(void) {
     LOG(LL_ERROR, ("Ethernet %s failed: %d", "eth ip handler", ret));
     return false;
   }
+
+  LOG(LL_INFO,("Starting ETH..."));
 
   ret = esp_eth_start(eth_handle);
   if (ret != ESP_OK) {
