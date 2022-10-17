@@ -83,10 +83,12 @@ static void esp32_eth_event_handler(void *ctx, esp_event_base_t ev_base,
     LOG(LL_INFO, ("Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
              mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3],
              mac_addr[4], mac_addr[5]));
-    //esp_eth_ioctl(eth_handle, ETH_CMD_S_FLOW_CTRL, &fc);
+
+    mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0, MGOS_NET_EV_CONNECTED);
     break;
   case ETHERNET_EVENT_DISCONNECTED:
     LOG(LL_INFO, ("Ethernet Link Down"));
+    mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0, MGOS_NET_EV_DISCONNECTED);
     break;
   case ETHERNET_EVENT_START:
     LOG(LL_INFO, ("Ethernet Started"));
@@ -112,6 +114,8 @@ static void esp32_ip_event_handler(void *arg, esp_event_base_t event_base,
   LOG(LL_INFO, ("ETHMASK:" IPSTR, IP2STR(&ip_info->netmask)));
   LOG(LL_INFO, ("ETHGW:" IPSTR, IP2STR(&ip_info->gw)));
   LOG(LL_INFO, ("~~~~~~~~~~~"));
+
+  mgos_net_dev_event_cb(MGOS_NET_IF_TYPE_ETHERNET, 0, MGOS_NET_EV_IP_ACQUIRED);
 }
 
 bool mgos_ethernet_init(void) {
