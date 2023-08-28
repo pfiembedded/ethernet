@@ -72,7 +72,6 @@ static void esp32_eth_event_handler(void *ctx, esp_event_base_t ev_base,
   //                         MGOS_NET_EV_IP_ACQUIRED);
   // }
   uint8_t mac_addr[6] = {0};
-  bool fc = true;
   /* we can get the ethernet driver handle from event data */
   esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)ev_data;
 
@@ -222,23 +221,24 @@ bool mgos_ethernet_init(void) {
   struct sockaddr_in ip = {0}, netmask = {0}, gw = {0};
 
   // VALIDATE IP / NM / GW
-  if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw)) {
+  if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw) == false) {
+    LOG(LL_ERROR, ("Ethernet failed: invalid IP/NM/GW"));
     return false;
   }
 
   esp_netif_ip_info_t static_ip = {
-      .ip.addr = ip.sin_addr.s_addr,
-      .netmask.addr = netmask.sin_addr.s_addr,
-      .gw.addr = gw.sin_addr.s_addr,
+    .ip.addr = ip.sin_addr.s_addr,
+    .netmask.addr = netmask.sin_addr.s_addr,
+    .gw.addr = gw.sin_addr.s_addr,
   };
 
   bool is_dhcp =
-      (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
+    (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
 
   LOG(LL_INFO,
-      ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
-       mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
-       phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
+    ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
+    mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
+    phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
 
   if (!is_dhcp) {
     char ips[16], nms[16], gws[16];
