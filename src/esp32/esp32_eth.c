@@ -207,50 +207,51 @@ bool mgos_ethernet_init(void) {
     return false;
   }
 
-  // if (mgos_sys_config_get_eth_dhcp_hostname() != NULL &&
-  //     esp_netif_set_hostname(esp_netif_get_handle_from_ifkey("ETH_DEF"),
-  //                            mgos_sys_config_get_eth_dhcp_hostname()) !=
-  //         ESP_OK) {
-  //   LOG(LL_ERROR, ("ETH: Failed to set host name"));
-  //   return false;
-  // }
+  // VALIDATE HOSTNAME
+  if (mgos_sys_config_get_eth_dhcp_hostname() != NULL &&
+      esp_netif_set_hostname(esp_netif_get_handle_from_ifkey("ETH_DEF"),
+                             mgos_sys_config_get_eth_dhcp_hostname()) !=
+          ESP_OK) {
+    LOG(LL_ERROR, ("ETH: Failed to set host name"));
+    return false;
+  }
 
   uint8_t mac_addr[6];
   mac->get_addr(mac, mac_addr);
 
   struct sockaddr_in ip = {0}, netmask = {0}, gw = {0};
 
-  bool is_dhcp = true;
+  // VALIDATE IP / NM / GW
+  if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw)) {
+    return false;
+  }
 
-  // if (mgos_eth_get_static_ip_config(&ip, &netmask, &gw)) {
-  //
-  //   esp_netif_ip_info_t static_ip = {
-  //       .ip.addr = ip.sin_addr.s_addr,
-  //       .netmask.addr = netmask.sin_addr.s_addr,
-  //       .gw.addr = gw.sin_addr.s_addr,
-  //   };
-  //
-  //   is_dhcp =
-  //       (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
-  //
-  //   if (!is_dhcp) {
-  //     char ips[16], nms[16], gws[16];
-  //     ip4addr_ntoa_r((ip4_addr_t *) &static_ip.ip, ips, sizeof(ips));
-  //     ip4addr_ntoa_r((ip4_addr_t *) &static_ip.netmask, nms, sizeof(nms));
-  //     ip4addr_ntoa_r((ip4_addr_t *) &static_ip.gw, gws, sizeof(gws));
-  //     LOG(LL_INFO, ("ETH: IP %s/%s, GW %s", ips, nms, gws));
-  //     esp_netif_dhcpc_stop(eth_if);
-  //     if ((ret = esp_netif_set_ip_info(eth_if, &static_ip)) != ESP_OK) {
-  //       LOG(LL_ERROR, ("ETH: Failed to set ip info: %d", ret));
-  //       return false;
-  //     }
-  //   }
-  // }
+  esp_netif_ip_info_t static_ip = {
+      .ip.addr = ip.sin_addr.s_addr,
+      .netmask.addr = netmask.sin_addr.s_addr,
+      .gw.addr = gw.sin_addr.s_addr,
+  };
+
+  bool is_dhcp =
+      (static_ip.ip.addr == IPADDR_ANY || static_ip.netmask.addr == IPADDR_ANY);
 
   LOG(LL_INFO,
       ("ETH: MAC %02x:%02x:%02x:%02x:%02x:%02x; PHY: %s @ %d%s", mac_addr[0],
        mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
        phy_model, phy_config.phy_addr, (is_dhcp ? "; IP: DHCP" : "")));
+
+  if (!is_dhcp) {
+    char ips[16], nms[16], gws[16];
+    ip4addr_ntoa_r((ip4_addr_t *) &static_ip.ip, ips, sizeof(ips));
+    ip4addr_ntoa_r((ip4_addr_t *) &static_ip.netmask, nms, sizeof(nms));
+    ip4addr_ntoa_r((ip4_addr_t *) &static_ip.gw, gws, sizeof(gws));
+    LOG(LL_INFO, ("ETH: IP %s/%s, GW %s", ips, nms, gws));
+    esp_netif_dhcpc_stop(eth_if);
+    if ((ret = esp_netif_set_ip_info(eth_if, &static_ip)) != ESP_OK) {
+      LOG(LL_ERROR, ("ETH: Failed to set ip info: %d", ret));
+      return false;
+    }
+  }
 
   // REGISTER HANDLERS
   ret = esp_event_handler_register(
